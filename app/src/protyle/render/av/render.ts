@@ -1,13 +1,13 @@
 import {fetchPost} from "../../../util/fetch";
 import {getColIconByType} from "./col";
 import {Constants} from "../../../constants";
-import {popTextCell, renderCell} from "./cell";
+import {renderCell} from "./cell";
 import {unicode2Emoji} from "../../../emoji";
 import {focusBlock} from "../../util/selection";
-import {isMac} from "../../util/compatibility";
 import {hasClosestBlock, hasClosestByClassName} from "../../util/hasClosest";
 import {stickyRow} from "./row";
 import {getCalcValue} from "./calc";
+import {openMenuPanel} from "./openMenuPanel";
 
 export const avRender = (element: Element, protyle: IProtyle, cb?: () => void, viewID?: string) => {
     let avElements: Element[] = [];
@@ -120,11 +120,7 @@ style="width: ${column.width || "200px"}">${getCalcValue(column) || '<svg><use x
 </div>`;
                 // body
                 data.rows.forEach((row: IAVRow) => {
-                    tableHTML += `<div class="av__row" data-id="${row.id}">
-<div class="av__gutters">
-    <button class="av__gutter ariaLabel" data-action="add" data-position="right" aria-label="${isMac() ? window.siyuan.languages.addBelowAbove : window.siyuan.languages.addBelowAbove.replace("⌥", "Alt+")}"><svg><use xlink:href="#iconAdd"></use></svg></button>
-    <button class="av__gutter ariaLabel" draggable="true" data-position="right" aria-label="${window.siyuan.languages.rowTip}"><svg><use xlink:href="#iconDrag"></use></svg></button>
-</div>`;
+                    tableHTML += `<div class="av__row" data-id="${row.id}">`;
                     if (pinIndex > -1) {
                         tableHTML += '<div class="av__colsticky"><div class="av__firstcol"><svg><use xlink:href="#iconUncheck"></use></svg></div>';
                     } else {
@@ -241,7 +237,7 @@ ${cell.color ? `color:${cell.color};` : ""}">${renderCell(cell.value, data.colum
                     }
                     const avMaskElement = document.querySelector(".av__mask");
                     if (avMaskElement) {
-                        (avMaskElement.querySelector(" textarea") as HTMLTextAreaElement).focus();
+                        (avMaskElement.querySelector("textarea, input") as HTMLTextAreaElement)?.focus();
                     } else if (!document.querySelector(".av__panel")) {
                         focusBlock(e);
                     }
@@ -268,7 +264,7 @@ ${cell.color ? `color:${cell.color};` : ""}">${renderCell(cell.value, data.colum
 const refreshTimeouts: {
     [key: string]: number;
 } = {};
-export const refreshAV = (protyle: IProtyle, operation: IOperation, isUndo: boolean) => {
+export const refreshAV = (protyle: IProtyle, operation: IOperation) => {
     if (operation.action === "setAttrViewName") {
         Array.from(protyle.wysiwyg.element.querySelectorAll(`[data-av-id="${operation.id}"]`)).forEach((item: HTMLElement) => {
             const titleElement = item.querySelector(".av__title") as HTMLElement;
@@ -295,11 +291,13 @@ export const refreshAV = (protyle: IProtyle, operation: IOperation, isUndo: bool
         } else {
             Array.from(protyle.wysiwyg.element.querySelectorAll(`[data-av-id="${operation.avID}"]`)).forEach((item: HTMLElement) => {
                 item.removeAttribute("data-render");
-                const isCurrent = item.querySelector(".av__pulse"); // ctrl+D 后点击添加行
                 avRender(item, protyle, () => {
-                    // https://github.com/siyuan-note/siyuan/issues/9599
-                    if (!isUndo && operation.action === "insertAttrViewBlock" && operation.isDetached && isCurrent) {
-                        popTextCell(protyle, [item.querySelector(`.av__row[data-id="${operation.srcIDs[0]}"] .av__cell[data-detached="true"]`)], "block");
+                    if (operation.action === "insertAttrViewBlock") {
+                        item.querySelectorAll(".av__cell--select").forEach((cellElement: HTMLElement) => {
+                            cellElement.classList.remove("av__cell--select");
+                        });
+                    } else if (operation.action === "addAttrViewCol" && item.querySelector(".av__pulse")) {
+                        openMenuPanel({protyle, blockElement: item, type: "edit", colId: operation.id});
                     }
                 }, ["addAttrViewView", "duplicateAttrViewView"].includes(operation.action) ? operation.id :
                     (operation.action === "removeAttrViewView" ? null : undefined));
