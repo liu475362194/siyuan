@@ -46,6 +46,7 @@ import {avRender} from "../render/av/render";
 import {emitOpenMenu} from "../../plugin/EventBus";
 import {insertAttrViewBlockAnimation} from "../render/av/row";
 import {avContextmenu} from "../render/av/action";
+import {openSearchAV} from "../render/av/relation";
 
 export class Gutter {
     public element: HTMLElement;
@@ -217,6 +218,10 @@ export class Gutter {
                     return;
                 }
                 if (buttonElement.dataset.type === "NodeAttributeViewRow") {
+                    blockElement.querySelectorAll(".av__cell--select, .av__cell--active").forEach((cellElement: HTMLElement) => {
+                        cellElement.classList.remove("av__cell--select", "av__cell--active");
+                        cellElement.querySelector(".av__drag-fill")?.remove();
+                    });
                     const avID = blockElement.getAttribute("data-av-id");
                     const srcIDs = [Lute.NewNodeID()];
                     const previousID = event.altKey ? (rowElement.previousElementSibling.getAttribute("data-id") || "") : buttonElement.dataset.rowId;
@@ -713,15 +718,11 @@ export class Gutter {
             accelerator: "⌘C",
             click() {
                 if (isNotEditBlock(selectsElement[0])) {
-                    let html = "";
-                    selectsElement.forEach(item => {
-                        html += removeEmbed(item);
-                    });
-                    writeText(protyle.lute.BlockDOM2StdMd(html).trimEnd());
+                    focusBlock(selectsElement[0]);
                 } else {
                     focusByRange(getEditorRange(selectsElement[0]));
-                    document.execCommand("copy");
                 }
+                document.execCommand("copy");
             }
         }, {
             label: window.siyuan.languages.copyPlainText,
@@ -782,6 +783,29 @@ export class Gutter {
             click: () => {
                 movePathTo((toPath) => {
                     hintMoveBlock(toPath[0], selectsElement, protyle);
+                });
+            }
+        }).element);
+        window.siyuan.menus.menu.append(new MenuItem({
+            label: window.siyuan.languages.addToDatabase,
+            icon: "iconDatabase",
+            click: () => {
+                openSearchAV("", this.element, (listItemElement) => {
+                    const sourceIds: string[] = [];
+                    selectsElement.forEach(item => {
+                        sourceIds.push(item.getAttribute("data-node-id"));
+                    });
+                    const avID = listItemElement.dataset.avId;
+                    transaction(protyle, [{
+                        action: "insertAttrViewBlock",
+                        avID,
+                        srcIDs: sourceIds,
+                        isDetached: false,
+                    }], [{
+                        action: "removeAttrViewBlock",
+                        srcIDs: sourceIds,
+                        avID,
+                    }]);
                 });
             }
         }).element);
@@ -1154,11 +1178,11 @@ export class Gutter {
             accelerator: "⌘C",
             click() {
                 if (isNotEditBlock(nodeElement)) {
-                    writeText(protyle.lute.BlockDOM2StdMd(removeEmbed(nodeElement)).trimEnd());
+                    focusBlock(nodeElement);
                 } else {
                     focusByRange(getEditorRange(nodeElement));
-                    document.execCommand("copy");
                 }
+                document.execCommand("copy");
             }
         }, {
             label: window.siyuan.languages.copyPlainText,
@@ -1211,6 +1235,26 @@ export class Gutter {
                 click: () => {
                     movePathTo((toPath) => {
                         hintMoveBlock(toPath[0], [nodeElement], protyle);
+                    });
+                }
+            }).element);
+            window.siyuan.menus.menu.append(new MenuItem({
+                label: window.siyuan.languages.addToDatabase,
+                icon: "iconDatabase",
+                click: () => {
+                    openSearchAV("", this.element, (listItemElement) => {
+                        const sourceIds: string[] = [nodeElement.getAttribute("data-node-id")];
+                        const avID = listItemElement.dataset.avId;
+                        transaction(protyle, [{
+                            action: "insertAttrViewBlock",
+                            avID,
+                            srcIDs: sourceIds,
+                            isDetached: false,
+                        }], [{
+                            action: "removeAttrViewBlock",
+                            srcIDs: sourceIds,
+                            avID,
+                        }]);
                     });
                 }
             }).element);
@@ -1683,7 +1727,7 @@ export class Gutter {
             updateHTML = `${window.siyuan.languages.modifiedAt} ${dayjs(updateHTML).format("YYYY-MM-DD HH:mm:ss")}<br>`;
         }
         window.siyuan.menus.menu.append(new MenuItem({
-            iconHTML: Constants.ZWSP,
+            iconHTML: "",
             type: "readonly",
             label: `${updateHTML}${window.siyuan.languages.createdAt} ${dayjs(id.substr(0, 14)).format("YYYY-MM-DD HH:mm:ss")}`,
         }).element);
@@ -1936,7 +1980,7 @@ export class Gutter {
                     const rowElement = hasClosestByClassName(target, "av__row");
                     if (rowElement && !rowElement.classList.contains("av__row--header")) {
                         element = rowElement;
-                        html = `<button data-type="NodeAttributeViewRowMenu" data-node-id="${dataNodeId}" data-row-id="${rowElement.dataset.id}" class="ariaLabel" data-position="right" aria-label="${window.siyuan.languages.rowTip}"><svg><use xlink:href="#iconDrag"></use></svg><span ${protyle.disabled ? "" : 'draggable="true"'}></span></button>`;
+                        html = `<button data-type="NodeAttributeViewRowMenu" data-node-id="${dataNodeId}" data-row-id="${rowElement.dataset.id}" class="ariaLabel" data-position="right" aria-label="${window.siyuan.languages.rowTip}"><svg><use xlink:href="#iconDrag"></use></svg><span ${protyle.disabled ? "" : 'draggable="true" class="fn__grab"'}></span></button>`;
                         if (!protyle.disabled) {
                             html = `<button data-type="NodeAttributeViewRow" data-node-id="${dataNodeId}" data-row-id="${rowElement.dataset.id}" class="ariaLabel" data-position="right" aria-label="${isMac() ? window.siyuan.languages.addBelowAbove : window.siyuan.languages.addBelowAbove.replace("⌥", "Alt+")}"><svg><use xlink:href="#iconAdd"></use></svg></button>${html}`;
                         }

@@ -198,9 +198,9 @@ export const saveLayout = () => {
                 right: dockToJSON(window.siyuan.layout.rightDock),
             };
             layoutToJSON(window.siyuan.layout.layout, layoutJSON.layout, breakObj);
+            window.siyuan.config.uiLayout = layoutJSON;
         }
     }
-
     if (Object.keys(breakObj).length > 0 && saveCount < 10) {
         saveCount++;
         setTimeout(() => {
@@ -443,9 +443,6 @@ export const JSONToLayout = (app: App, isStart: boolean) => {
         }
         /// #endif
     }
-    app.plugins.forEach(item => {
-        afterLoadPlugin(item);
-    });
     // 移除没有插件的 tab
     document.querySelectorAll('li[data-type="tab-header"]').forEach((item: HTMLElement) => {
         const initData = item.getAttribute("data-initdata");
@@ -484,6 +481,11 @@ export const JSONToLayout = (app: App, isStart: boolean) => {
             tab.parent.switchTab(item, false, false, true, false);
         });
     }
+    // 需放在 tab.parent.switchTab 后，否则当前 tab 永远为最后一个
+    app.plugins.forEach(item => {
+        afterLoadPlugin(item);
+    });
+    saveLayout();
     resizeTopBar();
 };
 
@@ -876,16 +878,19 @@ export const adjustLayout = (layout: Layout = window.siyuan.layout.centerLayout.
         }
     });
     let lastItem: HTMLElement;
-    while (layout.element.scrollWidth > layout.element.clientWidth) {
+    let index = Math.floor(window.innerWidth / 24);
+    // +2 由于某些分辨率下 scrollWidth 会大于 clientWidth
+    while (layout.element.scrollWidth > layout.element.clientWidth + 2 && index > 0) {
         layout.children.find((item: Layout | Wnd) => {
             if (item.element.style.width && item.element.style.width !== "0px") {
                 item.element.style.maxWidth = Math.max(Math.min(item.element.clientWidth, window.innerWidth) - 8, 64) + "px";
                 lastItem = item.element;
             }
-            if (layout.element.scrollWidth <= layout.element.clientWidth) {
+            if (layout.element.scrollWidth <= layout.element.clientWidth + 2) {
                 return true;
             }
         });
+        index--;
     }
     if (lastItem) {
         lastItem.style.maxWidth = Math.max(Math.min(lastItem.clientWidth, window.innerWidth) - 8, 64) + "px";

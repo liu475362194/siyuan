@@ -32,7 +32,7 @@ export const AIActions = (elements: Element[], protyle: IProtyle) => {
         ids.push(item.getAttribute("data-node-id"));
     });
     const customMenu: IMenu[] = [{
-        iconHTML: Constants.ZWSP,
+        iconHTML: "",
         label: window.siyuan.languages.aiCustomAction,
         click() {
             const dialog = new Dialog({
@@ -49,6 +49,7 @@ export const AIActions = (elements: Element[], protyle: IProtyle) => {
 </div>`,
                 width: isMobile() ? "92vw" : "520px",
             });
+            dialog.element.setAttribute("data-key", Constants.DIALOG_AICUSTOMACTION);
             const nameElement = dialog.element.querySelector("input");
             const customElement = dialog.element.querySelector("textarea");
             const btnsElement = dialog.element.querySelectorAll(".b3-button");
@@ -91,7 +92,7 @@ export const AIActions = (elements: Element[], protyle: IProtyle) => {
     }
     window.siyuan.storage[Constants.LOCAL_AI].forEach((item: { name: string, memo: string }) => {
         customMenu.push({
-            iconHTML: Constants.ZWSP,
+            iconHTML: "",
             action: "iconEdit",
             label: `<div aria-label="${escapeAriaLabel(item.memo)}" class="ariaLabel">${escapeHtml(item.name)}</div>`,
             bind: (element) => {
@@ -111,6 +112,7 @@ export const AIActions = (elements: Element[], protyle: IProtyle) => {
 </div>`,
                             width: isMobile() ? "92vw" : "520px",
                         });
+                        dialog.element.setAttribute("data-key", Constants.DIALOG_AIUPDATECUSTOMACTION);
                         const nameElement = dialog.element.querySelector("input");
                         nameElement.value = item.name;
                         const customElement = dialog.element.querySelector("textarea");
@@ -170,7 +172,7 @@ export const AIActions = (elements: Element[], protyle: IProtyle) => {
         label: window.siyuan.languages.ai,
         type: "submenu",
         submenu: [{
-            iconHTML: Constants.ZWSP,
+            iconHTML: "",
             label: window.siyuan.languages.aiContinueWrite,
             click() {
                 fetchPost("/api/ai/chatGPTWithAction", {ids, action: "Continue writing"}, (response) => {
@@ -178,11 +180,11 @@ export const AIActions = (elements: Element[], protyle: IProtyle) => {
                 });
             }
         }, {
-            iconHTML: Constants.ZWSP,
+            iconHTML: "",
             label: window.siyuan.languages.aiTranslate,
             type: "submenu",
             submenu: [{
-                iconHTML: Constants.ZWSP,
+                iconHTML: "",
                 label: window.siyuan.languages.aiTranslate_zh_Hans,
                 click() {
                     fetchPost("/api/ai/chatGPTWithAction", {
@@ -193,7 +195,7 @@ export const AIActions = (elements: Element[], protyle: IProtyle) => {
                     });
                 }
             }, {
-                iconHTML: Constants.ZWSP,
+                iconHTML: "",
                 label: window.siyuan.languages.aiTranslate_zh_Hant,
                 click() {
                     fetchPost("/api/ai/chatGPTWithAction", {
@@ -204,7 +206,7 @@ export const AIActions = (elements: Element[], protyle: IProtyle) => {
                     });
                 }
             }, {
-                iconHTML: Constants.ZWSP,
+                iconHTML: "",
                 label: window.siyuan.languages.aiTranslate_ja_JP,
                 click() {
                     fetchPost("/api/ai/chatGPTWithAction", {
@@ -215,7 +217,7 @@ export const AIActions = (elements: Element[], protyle: IProtyle) => {
                     });
                 }
             }, {
-                iconHTML: Constants.ZWSP,
+                iconHTML: "",
                 label: window.siyuan.languages.aiTranslate_ko_KR,
                 click() {
                     fetchPost("/api/ai/chatGPTWithAction", {
@@ -226,7 +228,7 @@ export const AIActions = (elements: Element[], protyle: IProtyle) => {
                     });
                 }
             }, {
-                iconHTML: Constants.ZWSP,
+                iconHTML: "",
                 label: window.siyuan.languages.aiTranslate_en_US,
                 click() {
                     fetchPost("/api/ai/chatGPTWithAction", {
@@ -237,7 +239,7 @@ export const AIActions = (elements: Element[], protyle: IProtyle) => {
                     });
                 }
             }, {
-                iconHTML: Constants.ZWSP,
+                iconHTML: "",
                 label: window.siyuan.languages.aiTranslate_es_ES,
                 click() {
                     fetchPost("/api/ai/chatGPTWithAction", {
@@ -248,7 +250,7 @@ export const AIActions = (elements: Element[], protyle: IProtyle) => {
                     });
                 }
             }, {
-                iconHTML: Constants.ZWSP,
+                iconHTML: "",
                 label: window.siyuan.languages.aiTranslate_fr_FR,
                 click() {
                     fetchPost("/api/ai/chatGPTWithAction", {
@@ -259,7 +261,7 @@ export const AIActions = (elements: Element[], protyle: IProtyle) => {
                     });
                 }
             }, {
-                iconHTML: Constants.ZWSP,
+                iconHTML: "",
                 label: window.siyuan.languages.aiTranslate_de_DE,
                 click() {
                     fetchPost("/api/ai/chatGPTWithAction", {
@@ -271,7 +273,7 @@ export const AIActions = (elements: Element[], protyle: IProtyle) => {
                 }
             }]
         }, {
-            iconHTML: Constants.ZWSP,
+            iconHTML: "",
             label: window.siyuan.languages.aiExtractSummary,
             click() {
                 fetchPost("/api/ai/chatGPTWithAction", {
@@ -282,7 +284,7 @@ export const AIActions = (elements: Element[], protyle: IProtyle) => {
                 });
             }
         }, {
-            iconHTML: Constants.ZWSP,
+            iconHTML: "",
             label: window.siyuan.languages.aiBrainStorm,
             click() {
                 fetchPost("/api/ai/chatGPTWithAction", {
@@ -293,7 +295,7 @@ export const AIActions = (elements: Element[], protyle: IProtyle) => {
                 });
             }
         }, {
-            iconHTML: Constants.ZWSP,
+            iconHTML: "",
             label: window.siyuan.languages.aiFixGrammarSpell,
             click() {
                 fetchPost("/api/ai/chatGPTWithAction", {
@@ -304,7 +306,18 @@ export const AIActions = (elements: Element[], protyle: IProtyle) => {
                 });
             }
         }, {
-            iconHTML: Constants.ZWSP,
+            iconHTML: "",
+            label: window.siyuan.languages.clearContext,
+            click() {
+                fetchPost("/api/ai/chatGPTWithAction", {
+                    ids,
+                    action: "Clear context"
+                }, (response) => {
+                    fillContent(protyle, response.data, elements);
+                });
+            }
+        }, {
+            iconHTML: "",
             label: window.siyuan.languages.custom,
             type: "submenu",
             submenu: customMenu
