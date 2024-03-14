@@ -51,10 +51,11 @@ type TOperation =
     | "setAttrViewPageSize"
     | "updateAttrViewColRelation"
     | "updateAttrViewColRollup"
+    | "hideAttrViewName"
 type TBazaarType = "templates" | "icons" | "widgets" | "themes" | "plugins"
 type TCardType = "doc" | "notebook" | "all"
 type TEventBus = "ws-main" | "sync-start" | "sync-end" | "sync-fail" |
-    "click-blockicon" | "click-editorcontent" | "click-pdf" | "click-editortitleicon" |
+    "click-blockicon" | "click-editorcontent" | "click-pdf" | "click-editortitleicon" | "click-flashcard-action" |
     "open-noneditableblock" |
     "open-menu-blockref" | "open-menu-fileannotationref" | "open-menu-tag" | "open-menu-link" | "open-menu-image" |
     "open-menu-av" | "open-menu-content" | "open-menu-breadcrumbmore" | "open-menu-doctree" | "open-menu-inbox" |
@@ -147,7 +148,7 @@ interface Window {
     }
     mermaid: {
         initialize(options: any): void,
-        init(options: any, element: Element): void
+        render(id: string, text: string): { svg: string }
     };
     plantumlEncoder: {
         encode(options: string): string,
@@ -217,9 +218,10 @@ interface ICard {
     cardID: string
     blockID: string
     nextDues: IObject
+    state: number   // 0：新卡
 }
 
-interface ICardData  {
+interface ICardData {
     cards: ICard[],
     unreviewedCount: number
     unreviewedNewCardCount: number
@@ -319,6 +321,7 @@ interface IPdfAnno {
     mode: string,
     id?: string,
     coords?: number[]
+    ids?: string[]
 }
 
 interface IBackStack {
@@ -452,6 +455,7 @@ interface IScrollAttr {
 interface IOperation {
     action: TOperation, // move， delete 不需要传 data
     id?: string,
+    blockID?: string,
     isTwoWay?: boolean, // 是否双向关联
     backRelationKeyID?: string, // 双向关联的目标关联列 ID
     avID?: string,  // av
@@ -619,6 +623,7 @@ interface IEditor {
     rtl: boolean;
     readOnly: boolean;
     listLogicalOutdent: boolean;
+    listItemDotNumberClickFocus: boolean;
     spellcheck: boolean;
     onlySearchForDoc: boolean;
     katexMacros: string;
@@ -715,13 +720,17 @@ interface IConfig {
         superBlock: boolean
         heading: boolean
         deck: boolean
+        reviewMode: number
         requestRetention: number
         maximumInterval: number
         weights: string
     }
     ai: {
         openAI: {
+            apiProvider: string // OpenAI, Azure
+            apiUserAgent: string
             apiBaseURL: string
+            apiVersion: string
             apiKey: string
             apiModel: string
             apiMaxTokens: number
@@ -1058,6 +1067,7 @@ interface IAVView {
     id: string
     type: string
     icon: string
+    hideAttrViewName: boolean
 }
 
 interface IAVTable extends IAVView {
@@ -1073,7 +1083,14 @@ interface IAVFilter {
     column: string,
     operator: TAVFilterOperator,
     value: IAVCellValue,
-    type?: TAVCol   // 仅用于标识新增时的类型，用于区分 rollup
+    relativeDate?: relativeDate
+    relativeDate2?: relativeDate
+}
+
+interface relativeDate {
+    count: number   // 数量
+    unit: number    // 单位：0: 天、1: 周、2: 月、3: 年
+    direction: number   // 方向：-1: 前、0: 现在、1: 后
 }
 
 interface IAVSort {
@@ -1151,7 +1168,7 @@ interface IAVCellValue {
     }
     relation?: {
         blockIDs: string[]
-        contents?: string[]
+        contents?: IAVCellValue[]
     }
     rollup?: {
         contents?: IAVCellValue[]

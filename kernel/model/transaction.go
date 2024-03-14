@@ -176,7 +176,7 @@ func performTx(tx *Transaction) (ret *TxErr) {
 			msg := fmt.Sprintf("PANIC RECOVERED: %v\n\t%s\n", e, stack)
 			logging.LogErrorf(msg)
 
-			if 0 == tx.state.Load() {
+			if 1 == tx.state.Load() {
 				tx.rollback()
 				return
 			}
@@ -277,6 +277,8 @@ func performTx(tx *Transaction) (ret *TxErr) {
 			ret = tx.doUpdateAttrViewColRelation(op)
 		case "updateAttrViewColRollup":
 			ret = tx.doUpdateAttrViewColRollup(op)
+		case "hideAttrViewName":
+			ret = tx.doHideAttrViewName(op)
 		}
 
 		if nil != ret {
@@ -1225,6 +1227,7 @@ type Operation struct {
 	NextID     string      `json:"nextID"`
 	RetData    interface{} `json:"retData"`
 	BlockIDs   []string    `json:"blockIDs"`
+	BlockID    string      `json:"blockID"`
 
 	DeckID string `json:"deckID"` // 用于添加/删除闪卡
 
@@ -1250,12 +1253,12 @@ type Transaction struct {
 
 	luteEngine *lute.Lute
 	m          *sync.Mutex
-	state      atomic.Int32 // 0: 未提交，1: 已提交，2: 已回滚
+	state      atomic.Int32 // 0: 初始化，1：未提交，:2: 已提交，3: 已回滚
 }
 
 func (tx *Transaction) WaitForCommit() {
 	for {
-		if 0 == tx.state.Load() {
+		if 1 == tx.state.Load() {
 			time.Sleep(10 * time.Millisecond)
 			continue
 		}
@@ -1271,7 +1274,7 @@ func (tx *Transaction) begin() (err error) {
 	tx.nodes = map[string]*ast.Node{}
 	tx.luteEngine = util.NewLute()
 	tx.m.Lock()
-	tx.state.Store(0)
+	tx.state.Store(1)
 	return
 }
 
@@ -1284,14 +1287,14 @@ func (tx *Transaction) commit() (err error) {
 	refreshDynamicRefTexts(tx.nodes, tx.trees)
 	IncSync()
 	tx.trees = nil
-	tx.state.Store(1)
+	tx.state.Store(2)
 	tx.m.Unlock()
 	return
 }
 
 func (tx *Transaction) rollback() {
 	tx.trees, tx.nodes = nil, nil
-	tx.state.Store(2)
+	tx.state.Store(3)
 	tx.m.Unlock()
 	return
 }
@@ -1373,7 +1376,7 @@ func refreshDynamicRefTexts(updatedDefNodes map[string]*ast.Node, updatedTrees m
 		refTree, ok := updatedTrees[refTreeID]
 		if !ok {
 			var err error
-			refTree, err = loadTreeByBlockID(refTreeID)
+			refTree, err = LoadTreeByBlockID(refTreeID)
 			if nil != err {
 				continue
 			}

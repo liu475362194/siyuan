@@ -444,7 +444,7 @@ const initKernel = (workspace, port, lang) => {
         const kernelName = "win32" === process.platform ? "SiYuan-Kernel.exe" : "SiYuan-Kernel";
         const kernelPath = path.join(appDir, "kernel", kernelName);
         if (!fs.existsSync(kernelPath)) {
-            showErrorWindow("⚠️ 内核文件丢失 Kernel is missing", "<div>内核可执行文件丢失，请重新安装思源，并将思源加入杀毒软件信任列表。</div><div>The kernel binary is not found, please reinstall SiYuan and add SiYuan into the trust list of your antivirus software.</div>");
+            showErrorWindow("⚠️ 内核程序丢失 Kernel program is missing", `<div>内核程序丢失，请重新安装思源，并将思源内核程序加入杀毒软件信任列表。</div><div>The kernel program is not found, please reinstall SiYuan and add SiYuan Kernel prgram into the trust list of your antivirus software.</div><div><i>${kernelPath}</i></div>`);
             bootWindow.destroy();
             resolve(false);
             return;
@@ -859,12 +859,16 @@ app.whenReady().then(() => {
         });
     });
     ipcMain.on("siyuan-export-newwindow", (event, data) => {
+        const parentWnd = getWindowByContentId(event.sender.id);
+        // The PDF/Word export preview window automatically adjusts according to the size of the main window https://github.com/siyuan-note/siyuan/issues/10554
+        const width = parentWnd.getBounds().width * 0.8;
+        const height = parentWnd.getBounds().height * 0.8;
         const printWin = new BrowserWindow({
-            parent: getWindowByContentId(event.sender.id),
-            modal: true,
+            parent: parentWnd,
+            modal: false,
             show: true,
-            width: 1032,
-            height: 725,
+            width: width,
+            height: height,
             resizable: false,
             frame: "darwin" === process.platform,
             icon: path.join(appDir, "stage", "icon-large.png"),
@@ -1217,9 +1221,13 @@ app.on("activate", () => {
     }
 });
 
-// 在编辑器内打开链接的处理，比如 iframe 上的打开链接。
 app.on("web-contents-created", (webContentsCreatedEvent, contents) => {
     contents.setWindowOpenHandler((details) => {
+        // https://github.com/siyuan-note/siyuan/issues/10567
+        if (details.url.startsWith("file:///") && details.disposition === "foreground-tab") {
+            return;
+        }
+        // 在编辑器内打开链接的处理，比如 iframe 上的打开链接。
         shell.openExternal(details.url);
         return {action: "deny"};
     });
