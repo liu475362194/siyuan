@@ -172,7 +172,7 @@ func NewTableView() (ret *View) {
 	return
 }
 
-func NewTableViewWithBlockKey(blockKeyID string) (view *View, blockKey *Key) {
+func NewTableViewWithBlockKey(blockKeyID string) (view *View, blockKey, selectKey *Key) {
 	name := getI18nName("table")
 	view = &View{
 		ID:         ast.NewNodeID(),
@@ -188,6 +188,9 @@ func NewTableViewWithBlockKey(blockKeyID string) (view *View, blockKey *Key) {
 	}
 	blockKey = NewKey(blockKeyID, getI18nName("key"), "", KeyTypeBlock)
 	view.Table.Columns = []*ViewTableColumn{{ID: blockKeyID}}
+
+	selectKey = NewKey(ast.NewNodeID(), getI18nName("select"), "", KeyTypeSelect)
+	view.Table.Columns = append(view.Table.Columns, &ViewTableColumn{ID: selectKey.ID})
 	return
 }
 
@@ -202,11 +205,11 @@ type Viewable interface {
 }
 
 func NewAttributeView(id string) (ret *AttributeView) {
-	view, blockKey := NewTableViewWithBlockKey(ast.NewNodeID())
+	view, blockKey, selectKey := NewTableViewWithBlockKey(ast.NewNodeID())
 	ret = &AttributeView{
 		Spec:      0,
 		ID:        id,
-		KeyValues: []*KeyValues{{Key: blockKey}},
+		KeyValues: []*KeyValues{{Key: blockKey}, {Key: selectKey}},
 		ViewID:    view.ID,
 		Views:     []*View{view},
 	}
@@ -417,7 +420,7 @@ func SaveAttributeView(av *AttributeView) (err error) {
 			}
 
 			if 0 == v.UpdatedAt {
-				v.UpdatedAt = v.CreatedAt
+				v.UpdatedAt = v.CreatedAt + 1000
 			}
 		}
 	}
@@ -518,6 +521,22 @@ func (av *AttributeView) GetCurrentView(viewID string) (ret *View, err error) {
 	}
 	ret = av.Views[0]
 	return
+}
+
+func (av *AttributeView) ExistBlock(blockID string) bool {
+	for _, kv := range av.KeyValues {
+		if KeyTypeBlock != kv.Key.Type {
+			continue
+		}
+
+		for _, v := range kv.Values {
+			if v.BlockID == blockID {
+				return true
+			}
+		}
+		return false
+	}
+	return false
 }
 
 func (av *AttributeView) GetValue(keyID, blockID string) (ret *Value) {

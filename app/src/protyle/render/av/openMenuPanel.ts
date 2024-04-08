@@ -31,6 +31,8 @@ import {bindRollupData, getRollupHTML, goSearchRollupCol} from "./rollup";
 import {updateCellsValue} from "./cell";
 import {openCalcMenu} from "./calc";
 import * as dayjs from "dayjs";
+import {confirmDialog} from "../../../dialog/confirmDialog";
+import {escapeAttr} from "../../../util/escape";
 
 export const openMenuPanel = (options: {
     protyle: IProtyle,
@@ -1025,38 +1027,40 @@ export const openMenuPanel = (options: {
                     event.stopPropagation();
                     break;
                 } else if (type === "removeCol") {
-                    const colId = menuElement.querySelector(".b3-menu__item").getAttribute("data-col-id");
-                    let previousID: string;
-                    const colData = data.view.columns.find((item: IAVColumn, index) => {
-                        if (item.id === colId) {
-                            previousID = data.view.columns[index - 1]?.id;
-                            return true;
-                        }
+                    confirmDialog(isCustomAttr ? window.siyuan.languages.deleteOpConfirm : "", isCustomAttr ? window.siyuan.languages.removeCol.replace("${x}", menuElement.querySelector("input").value) : "", () => {
+                        const colId = menuElement.querySelector(".b3-menu__item").getAttribute("data-col-id");
+                        let previousID: string;
+                        const colData = data.view.columns.find((item: IAVColumn, index) => {
+                            if (item.id === colId) {
+                                previousID = data.view.columns[index - 1]?.id;
+                                return true;
+                            }
+                        });
+                        const newUpdated = dayjs().format("YYYYMMDDHHmmss");
+                        transaction(options.protyle, [{
+                            action: "removeAttrViewCol",
+                            id: colId,
+                            avID,
+                        }, {
+                            action: "doUpdateUpdated",
+                            id: blockID,
+                            data: newUpdated,
+                        }], [{
+                            action: "addAttrViewCol",
+                            name: colData.name,
+                            avID,
+                            type: colData.type,
+                            id: colId,
+                            previousID
+                        }, {
+                            action: "doUpdateUpdated",
+                            id: blockID,
+                            data: options.blockElement.getAttribute("updated")
+                        }]);
+                        removeAttrViewColAnimation(options.blockElement, colId);
+                        options.blockElement.setAttribute("updated", newUpdated);
+                        avPanelElement.remove();
                     });
-                    const newUpdated = dayjs().format("YYYYMMDDHHmmss");
-                    transaction(options.protyle, [{
-                        action: "removeAttrViewCol",
-                        id: colId,
-                        avID,
-                    }, {
-                        action: "doUpdateUpdated",
-                        id: blockID,
-                        data: newUpdated,
-                    }], [{
-                        action: "addAttrViewCol",
-                        name: colData.name,
-                        avID,
-                        type: colData.type,
-                        id: colId,
-                        previousID
-                    }, {
-                        action: "doUpdateUpdated",
-                        id: blockID,
-                        data: options.blockElement.getAttribute("updated")
-                    }]);
-                    removeAttrViewColAnimation(options.blockElement, colId);
-                    options.blockElement.setAttribute("updated", newUpdated);
-                    avPanelElement.remove();
                     event.preventDefault();
                     event.stopPropagation();
                     break;
@@ -1071,7 +1075,11 @@ export const openMenuPanel = (options: {
                     event.stopPropagation();
                     break;
                 } else if (type === "addColOptionOrCell") {
-                    addColOptionOrCell(options.protyle, data, options.cellElements, target, menuElement, options.blockElement);
+                    if (target.querySelector(".b3-menu__checked")) {
+                        removeCellOption(options.protyle, data, options.cellElements,  menuElement.querySelector(`.b3-chips .b3-chip[data-content="${escapeAttr(target.dataset.name)}"]`), options.blockElement);
+                    } else {
+                        addColOptionOrCell(options.protyle, data, options.cellElements, target, menuElement, options.blockElement);
+                    }
                     window.siyuan.menus.menu.remove();
                     event.preventDefault();
                     event.stopPropagation();

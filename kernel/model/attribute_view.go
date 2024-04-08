@@ -340,9 +340,13 @@ func GetBlockAttributeViewKeys(blockID string) (ret []*BlockAttributeViewKeys) {
 						for _, bID := range relVal.Relation.BlockIDs {
 							destVal := destAv.GetValue(kv.Key.Rollup.KeyID, bID)
 							if nil == destVal {
-								destVal = treenode.GetAttributeViewDefaultValue(ast.NewNodeID(), kv.Key.Rollup.KeyID, blockID, destKey.Type)
+								if destAv.ExistBlock(bID) { // 数据库中存在行但是列值不存在是数据未初始化，这里补一个默认值
+									destVal = treenode.GetAttributeViewDefaultValue(ast.NewNodeID(), kv.Key.Rollup.KeyID, bID, destKey.Type)
+								}
+								if nil == destVal {
+									continue
+								}
 							}
-
 							if av.KeyTypeNumber == destKey.Type {
 								destVal.Number.Format = destKey.NumberFormat
 								destVal.Number.FormatNumber()
@@ -367,6 +371,7 @@ func GetBlockAttributeViewKeys(blockID string) (ret []*BlockAttributeViewKeys) {
 				for _, blockValue := range destAv.GetBlockKeyValues().Values {
 					blocks[blockValue.BlockID] = blockValue
 				}
+				kv.Values[0].Relation.Contents = nil // 先清空 https://github.com/siyuan-note/siyuan/issues/10670
 				for _, bID := range kv.Values[0].Relation.BlockIDs {
 					kv.Values[0].Relation.Contents = append(kv.Values[0].Relation.Contents, blocks[bID])
 				}
@@ -416,7 +421,7 @@ func GetBlockAttributeViewKeys(blockID string) (ret []*BlockAttributeViewKeys) {
 					ial := map[string]string{}
 					block := getRowBlockValue(keyValues)
 					if nil != block && !block.IsDetached {
-						ial = GetBlockAttrsWithoutWaitWriting(block.ID)
+						ial = GetBlockAttrsWithoutWaitWriting(block.BlockID)
 					}
 
 					kv.Values[0].Template.Content = renderTemplateCol(ial, flashcard, keyValues, kv.Key.Template)
@@ -595,7 +600,7 @@ func RenderAttributeView(avID, viewID, query string, page, pageSize int) (viewab
 
 func renderAttributeView(attrView *av.AttributeView, viewID, query string, page, pageSize int) (viewable av.Viewable, err error) {
 	if 1 > len(attrView.Views) {
-		view, _ := av.NewTableViewWithBlockKey(ast.NewNodeID())
+		view, _, _ := av.NewTableViewWithBlockKey(ast.NewNodeID())
 		attrView.Views = append(attrView.Views, view)
 		attrView.ViewID = view.ID
 		if err = av.SaveAttributeView(attrView); nil != err {
@@ -682,7 +687,7 @@ func renderAttributeView(attrView *av.AttributeView, viewID, query string, page,
 			}
 
 			if 0 == v.UpdatedAt {
-				v.UpdatedAt = v.CreatedAt
+				v.UpdatedAt = v.CreatedAt + 1000
 			}
 		}
 	}
@@ -723,7 +728,7 @@ func renderAttributeView(attrView *av.AttributeView, viewID, query string, page,
 	}
 
 	viewable.FilterRows(attrView)
-	viewable.SortRows()
+	viewable.SortRows(attrView)
 	viewable.CalcCols()
 
 	// 分页
@@ -807,9 +812,20 @@ func renderTemplateCol(ial map[string]string, flashcard *Flashcard, rowValues []
 		if 0 < len(rowValue.Values) {
 			v := rowValue.Values[0]
 			if av.KeyTypeNumber == v.Type {
-				dataModel[rowValue.Key.Name] = v.Number.Content
+				if nil != v.Number && v.Number.IsNotEmpty {
+					dataModel[rowValue.Key.Name] = v.Number.Content
+				}
 			} else if av.KeyTypeDate == v.Type {
-				dataModel[rowValue.Key.Name] = time.UnixMilli(v.Date.Content)
+				if nil != v.Date && v.Date.IsNotEmpty {
+					dataModel[rowValue.Key.Name] = time.UnixMilli(v.Date.Content)
+				}
+			} else if av.KeyTypeRollup == v.Type {
+				if 0 < len(v.Rollup.Contents) && av.KeyTypeNumber == v.Rollup.Contents[0].Type {
+					// 模板使用汇总时支持数字计算
+					// Template supports numerical calculations when using rollup https://github.com/siyuan-note/siyuan/issues/10810
+					// 汇总数字时仅取第一个数字填充模板
+					dataModel[rowValue.Key.Name] = v.Rollup.Contents[0].Number.Content
+				}
 			} else {
 				dataModel[rowValue.Key.Name] = v.String()
 			}
@@ -900,7 +916,7 @@ func renderAttributeViewTable(attrView *av.AttributeView, view *av.View, query s
 			continue
 		}
 
-		if treenode.GetBlockTree(blockID) == nil {
+		if nil == treenode.GetBlockTree(blockID) {
 			notFound = append(notFound, blockID)
 		}
 	}
@@ -989,7 +1005,12 @@ func renderAttributeViewTable(attrView *av.AttributeView, view *av.View, query s
 				for _, blockID := range relVal.Relation.BlockIDs {
 					destVal := destAv.GetValue(rollupKey.Rollup.KeyID, blockID)
 					if nil == destVal {
-						continue
+						if destAv.ExistBlock(blockID) { // 数据库中存在行但是列值不存在是数据未初始化，这里补一个默认值
+							destVal = treenode.GetAttributeViewDefaultValue(ast.NewNodeID(), rollupKey.Rollup.KeyID, blockID, destKey.Type)
+						}
+						if nil == destVal {
+							continue
+						}
 					}
 					if av.KeyTypeNumber == destKey.Type {
 						destVal.Number.Format = destKey.NumberFormat
@@ -1376,15 +1397,14 @@ func (tx *Transaction) doSortAttrViewView(operation *Operation) (ret *TxErr) {
 		return &TxErr{code: TxErrWriteAttributeView, id: operation.AvID, msg: err.Error()}
 	}
 
-	view, err := getAttrViewViewByBlockID(attrView, operation.BlockID)
+	view := attrView.GetView(operation.ID)
 	if nil == view {
 		logging.LogErrorf("get view failed: %s", operation.BlockID)
 		return &TxErr{code: TxErrWriteAttributeView, id: operation.AvID, msg: err.Error()}
 	}
 	viewID := view.ID
-	previewViewID := operation.PreviousID
-
-	if viewID == previewViewID {
+	previousViewID := operation.PreviousID
+	if viewID == previousViewID {
 		return
 	}
 
@@ -1402,7 +1422,7 @@ func (tx *Transaction) doSortAttrViewView(operation *Operation) (ret *TxErr) {
 
 	attrView.Views = append(attrView.Views[:index], attrView.Views[index+1:]...)
 	for i, v := range attrView.Views {
-		if v.ID == previewViewID {
+		if v.ID == previousViewID {
 			previousIndex = i + 1
 			break
 		}
@@ -1738,7 +1758,7 @@ func getAvNames(avIDs string) (ret string) {
 			continue
 		}
 		if "" == nodeAvName {
-			nodeAvName = "Untitled"
+			nodeAvName = Conf.language(105)
 		}
 
 		tpl := strings.ReplaceAll(attrAvNameTpl, "${avID}", nodeAvID)
@@ -1926,14 +1946,14 @@ func setAttributeViewColumnCalc(operation *Operation) (err error) {
 }
 
 func (tx *Transaction) doInsertAttrViewBlock(operation *Operation) (ret *TxErr) {
-	err := AddAttributeViewBlock(tx, operation.SrcIDs, operation.AvID, operation.BlockID, operation.PreviousID, operation.IsDetached)
+	err := AddAttributeViewBlock(tx, operation.SrcIDs, operation.AvID, operation.BlockID, operation.PreviousID, operation.IsDetached, operation.IgnoreFillFilterVal)
 	if nil != err {
 		return &TxErr{code: TxErrWriteAttributeView, id: operation.AvID, msg: err.Error()}
 	}
 	return
 }
 
-func AddAttributeViewBlock(tx *Transaction, srcIDs []string, avID, blockID, previousBlockID string, isDetached bool) (err error) {
+func AddAttributeViewBlock(tx *Transaction, srcIDs []string, avID, blockID, previousBlockID string, isDetached, ignoreFillFilter bool) (err error) {
 	for _, id := range srcIDs {
 		var tree *parse.Tree
 		if !isDetached {
@@ -1949,14 +1969,14 @@ func AddAttributeViewBlock(tx *Transaction, srcIDs []string, avID, blockID, prev
 			}
 		}
 
-		if avErr := addAttributeViewBlock(avID, blockID, previousBlockID, id, isDetached, tree, tx); nil != avErr {
+		if avErr := addAttributeViewBlock(avID, blockID, previousBlockID, id, isDetached, ignoreFillFilter, tree, tx); nil != avErr {
 			return avErr
 		}
 	}
 	return
 }
 
-func addAttributeViewBlock(avID, blockID, previousBlockID, addingBlockID string, isDetached bool, tree *parse.Tree, tx *Transaction) (err error) {
+func addAttributeViewBlock(avID, blockID, previousBlockID, addingBlockID string, isDetached, ignoreFillFilter bool, tree *parse.Tree, tx *Transaction) (err error) {
 	var node *ast.Node
 	if !isDetached {
 		node = treenode.GetNodeInTree(tree, addingBlockID)
@@ -1985,6 +2005,10 @@ func addAttributeViewBlock(avID, blockID, previousBlockID, addingBlockID string,
 	blockValues := attrView.GetBlockKeyValues()
 	for _, blockValue := range blockValues.Values {
 		if blockValue.Block.ID == addingBlockID {
+			if !isDetached {
+				// 重复绑定一下，比如剪切数据库块的场景需要
+				bindBlockAv0(tx, avID, blockID, node, tree)
+			}
 			return
 		}
 	}
@@ -2007,10 +2031,10 @@ func addAttributeViewBlock(avID, blockID, previousBlockID, addingBlockID string,
 
 	// 如果存在过滤条件，则将过滤条件应用到新添加的块上
 	view, _ := getAttrViewViewByBlockID(attrView, blockID)
-	if nil != view && 0 < len(view.Table.Filters) {
+	if nil != view && 0 < len(view.Table.Filters) && !ignoreFillFilter {
 		viewable, _ := renderAttributeViewTable(attrView, view, "")
 		viewable.FilterRows(attrView)
-		viewable.SortRows()
+		viewable.SortRows(attrView)
 
 		var nearRow *av.TableRow
 		if 0 < len(viewable.Rows) {
@@ -2074,31 +2098,7 @@ func addAttributeViewBlock(avID, blockID, previousBlockID, addingBlockID string,
 	}
 
 	if !isDetached {
-		attrs := parse.IAL2Map(node.KramdownIAL)
-
-		if "" == attrs[av.NodeAttrNameAvs] {
-			attrs[av.NodeAttrNameAvs] = avID
-		} else {
-			avIDs := strings.Split(attrs[av.NodeAttrNameAvs], ",")
-			avIDs = append(avIDs, avID)
-			avIDs = gulu.Str.RemoveDuplicatedElem(avIDs)
-			attrs[av.NodeAttrNameAvs] = strings.Join(avIDs, ",")
-		}
-
-		avNames := getAvNames(attrs[av.NodeAttrNameAvs])
-		if "" != avNames {
-			attrs[av.NodeAttrViewNames] = avNames
-		}
-
-		if nil != tx {
-			if err = setNodeAttrsWithTx(tx, node, tree, attrs); nil != err {
-				return
-			}
-		} else {
-			if err = setNodeAttrs(node, tree, attrs); nil != err {
-				return
-			}
-		}
+		bindBlockAv0(tx, avID, blockID, node, tree)
 	}
 
 	for _, view := range attrView.Views {
@@ -2913,18 +2913,12 @@ func UpdateAttributeViewCell(tx *Transaction, avID, keyID, rowID, cellID string,
 
 	if nil != blockVal {
 		blockVal.Block.Updated = now
-		blockVal.UpdatedAt = now
-		if val.CreatedAt == val.UpdatedAt {
-			val.UpdatedAt += 1000 // 防止更新时间和创建时间一样
-		}
+		blockVal.SetUpdatedAt(now)
 		if isUpdatingBlockKey {
 			blockVal.IsDetached = val.IsDetached
 		}
 	}
-	val.UpdatedAt = now
-	if val.CreatedAt == val.UpdatedAt {
-		val.UpdatedAt += 1000 // 防止更新时间和创建时间一样
-	}
+	val.SetUpdatedAt(now)
 
 	key, _ := attrView.GetKey(val.KeyID)
 	if nil != key && av.KeyTypeRelation == key.Type && nil != key.Relation {
@@ -2956,6 +2950,7 @@ func UpdateAttributeViewCell(tx *Transaction, avID, keyID, rowID, cellID string,
 
 							destVal.Relation.BlockIDs = append(destVal.Relation.BlockIDs, rowID)
 							destVal.Relation.BlockIDs = gulu.Str.RemoveDuplicatedElem(destVal.Relation.BlockIDs)
+							destVal.SetUpdatedAt(now)
 							break
 						}
 					}
@@ -2974,6 +2969,7 @@ func UpdateAttributeViewCell(tx *Transaction, avID, keyID, rowID, cellID string,
 							for _, value := range keyValues.Values {
 								if value.BlockID == blockID {
 									value.Relation.BlockIDs = gulu.Str.RemoveElem(value.Relation.BlockIDs, rowID)
+									value.SetUpdatedAt(now)
 									break
 								}
 							}
@@ -3036,6 +3032,11 @@ func bindBlockAv(tx *Transaction, avID, blockID string) {
 		return
 	}
 
+	bindBlockAv0(tx, avID, blockID, node, tree)
+	return
+}
+
+func bindBlockAv0(tx *Transaction, avID, blockID string, node *ast.Node, tree *parse.Tree) {
 	attrs := parse.IAL2Map(node.KramdownIAL)
 	if "" == attrs[av.NodeAttrNameAvs] {
 		attrs[av.NodeAttrNameAvs] = avID
@@ -3046,6 +3047,12 @@ func bindBlockAv(tx *Transaction, avID, blockID string) {
 		attrs[av.NodeAttrNameAvs] = strings.Join(avIDs, ",")
 	}
 
+	avNames := getAvNames(attrs[av.NodeAttrNameAvs])
+	if "" != avNames {
+		attrs[av.NodeAttrViewNames] = avNames
+	}
+
+	var err error
 	if nil != tx {
 		err = setNodeAttrsWithTx(tx, node, tree, attrs)
 	} else {
